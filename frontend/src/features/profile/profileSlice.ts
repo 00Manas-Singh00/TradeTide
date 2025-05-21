@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
+import { apiGet, apiPut } from '../../apiClient';
 
 export interface Skill {
   id: string;
@@ -12,8 +13,12 @@ export interface ProfileState {
   bio: string;
   skillsOffered: Skill[];
   skillsWanted: Skill[];
+  avatarUrl?: string;
+  coverPhotoUrl?: string;
+  socialLinks?: { type: string; url: string }[];
   loading: boolean;
   error: string | null;
+  success: string | null;
 }
 
 const initialState: ProfileState = {
@@ -22,33 +27,54 @@ const initialState: ProfileState = {
   bio: '',
   skillsOffered: [],
   skillsWanted: [],
+  avatarUrl: '',
+  coverPhotoUrl: '',
+  socialLinks: [],
   loading: false,
   error: null,
+  success: null,
 };
 
-// Mock async fetch profile
+// Real async fetch profile
 export const fetchProfile = createAsyncThunk('profile/fetchProfile', async () => {
-  await new Promise((res) => setTimeout(res, 1000));
-  // Mock profile data
+  const data = await apiGet<any>('/api/profile');
   return {
-    name: 'Test User',
-    email: 'test@example.com',
-    bio: 'I love learning and sharing skills! 🎨',
-    skillsOffered: [
-      { id: '1', name: 'Digital Art' },
-    ],
-    skillsWanted: [
-      { id: '2', name: 'French Lessons' },
-    ],
+    name: data.username,
+    email: data.email,
+    bio: data.bio || '',
+    skillsOffered: (data.skillsOffered || []).map((name: string, idx: number) => ({ id: `${idx}`, name })),
+    skillsWanted: (data.skillsWanted || []).map((name: string, idx: number) => ({ id: `${idx}`, name })),
+    avatarUrl: data.avatarUrl || '',
+    coverPhotoUrl: data.coverPhotoUrl || '',
+    socialLinks: data.socialLinks || [],
   };
 });
 
-// Mock async update profile
+// Real async update profile
 export const updateProfile = createAsyncThunk(
   'profile/updateProfile',
-  async (profile: Omit<ProfileState, 'loading' | 'error'>) => {
-    await new Promise((res) => setTimeout(res, 1000));
-    return profile;
+  async (profile: Omit<ProfileState, 'loading' | 'error' | 'success'>) => {
+    const payload = {
+      username: profile.name,
+      email: profile.email,
+      bio: profile.bio,
+      skillsOffered: profile.skillsOffered.map(s => s.name),
+      skillsWanted: profile.skillsWanted.map(s => s.name),
+      avatarUrl: profile.avatarUrl,
+      coverPhotoUrl: profile.coverPhotoUrl,
+      socialLinks: profile.socialLinks,
+    };
+    const data = await apiPut<any>('/api/profile', payload);
+    return {
+      name: data.username,
+      email: data.email,
+      bio: data.bio || '',
+      skillsOffered: (data.skillsOffered || []).map((name: string, idx: number) => ({ id: `${idx}`, name })),
+      skillsWanted: (data.skillsWanted || []).map((name: string, idx: number) => ({ id: `${idx}`, name })),
+      avatarUrl: data.avatarUrl || '',
+      coverPhotoUrl: data.coverPhotoUrl || '',
+      socialLinks: data.socialLinks || [],
+    };
   }
 );
 
@@ -68,38 +94,56 @@ const profileSlice = createSlice({
     removeSkillWanted(state, action: PayloadAction<string>) {
       state.skillsWanted = state.skillsWanted.filter(skill => skill.id !== action.payload);
     },
+    clearProfileMessages(state) {
+      state.error = null;
+      state.success = null;
+    },
   },
   extraReducers: (builder) => {
     builder
       .addCase(fetchProfile.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.success = null;
       })
       .addCase(fetchProfile.fulfilled, (state, action) => {
         state.loading = false;
         state.name = action.payload.name;
         state.email = action.payload.email;
+        state.bio = action.payload.bio;
         state.skillsOffered = action.payload.skillsOffered;
         state.skillsWanted = action.payload.skillsWanted;
+        state.avatarUrl = action.payload.avatarUrl;
+        state.coverPhotoUrl = action.payload.coverPhotoUrl;
+        state.socialLinks = action.payload.socialLinks;
+        state.success = null;
       })
       .addCase(fetchProfile.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch profile';
+        state.success = null;
       })
       .addCase(updateProfile.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.success = null;
       })
       .addCase(updateProfile.fulfilled, (state, action) => {
         state.loading = false;
         state.name = action.payload.name;
         state.email = action.payload.email;
+        state.bio = action.payload.bio;
         state.skillsOffered = action.payload.skillsOffered;
         state.skillsWanted = action.payload.skillsWanted;
+        state.avatarUrl = action.payload.avatarUrl;
+        state.coverPhotoUrl = action.payload.coverPhotoUrl;
+        state.socialLinks = action.payload.socialLinks;
+        state.success = 'Profile updated!';
       })
       .addCase(updateProfile.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to update profile';
+        state.success = null;
       });
   },
 });
@@ -109,6 +153,7 @@ export const {
   removeSkillOffered,
   addSkillWanted,
   removeSkillWanted,
+  clearProfileMessages,
 } = profileSlice.actions;
 
 export default profileSlice.reducer; 

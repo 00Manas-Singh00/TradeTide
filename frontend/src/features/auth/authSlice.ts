@@ -1,7 +1,20 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { apiPost } from '../../apiClient';
+
+interface AuthUser {
+  _id: string;
+  username: string;
+  email: string;
+  skillsOffered: string[];
+  skillsWanted: string[];
+  avatarUrl?: string;
+  coverPhotoUrl?: string;
+  socialLinks?: { type: string; url: string }[];
+  badges?: string[];
+}
 
 interface AuthState {
-  user: { email: string; name: string } | null;
+  user: AuthUser | null;
   token: string | null;
   loading: boolean;
   error: string | null;
@@ -14,41 +27,40 @@ const initialState: AuthState = {
   error: null,
 };
 
-// Mock async login
+// Real async login
 export const login = createAsyncThunk(
   'auth/login',
   async (
     { email, password }: { email: string; password: string },
     { rejectWithValue }
   ) => {
-    // Simulate API delay
-    await new Promise((res) => setTimeout(res, 1000));
-    if (email === 'test@example.com' && password === 'password') {
-      return {
-        user: { email, name: 'Test User' },
-        token: 'mock-jwt-token',
-      };
-    } else {
-      return rejectWithValue('Invalid credentials');
+    try {
+      const data = await apiPost<{ user: any; token: string }>(
+        '/api/auth/login',
+        { email, password }
+      );
+      return data;
+    } catch (err: any) {
+      return rejectWithValue(err.message || 'Login failed');
     }
   }
 );
 
-// Mock async register
+// Real async register
 export const register = createAsyncThunk(
   'auth/register',
   async (
     { email, password, name }: { email: string; password: string; name: string },
     { rejectWithValue }
   ) => {
-    await new Promise((res) => setTimeout(res, 1000));
-    if (email && password && name) {
-      return {
-        user: { email, name },
-        token: 'mock-jwt-token',
-      };
-    } else {
-      return rejectWithValue('Missing fields');
+    try {
+      const data = await apiPost<{ user: any; token: string }>(
+        '/api/auth/register',
+        { email, password, username: name }
+      );
+      return data;
+    } catch (err: any) {
+      return rejectWithValue(err.message || 'Registration failed');
     }
   }
 );
@@ -61,6 +73,7 @@ const authSlice = createSlice({
       state.user = null;
       state.token = null;
       state.error = null;
+      localStorage.removeItem('token');
     },
     clearError(state) {
       state.error = null;
@@ -77,6 +90,9 @@ const authSlice = createSlice({
         state.loading = false;
         state.user = action.payload.user;
         state.token = action.payload.token;
+        if (action.payload.token) {
+          localStorage.setItem('token', action.payload.token);
+        }
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -91,6 +107,9 @@ const authSlice = createSlice({
         state.loading = false;
         state.user = action.payload.user;
         state.token = action.payload.token;
+        if (action.payload.token) {
+          localStorage.setItem('token', action.payload.token);
+        }
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;

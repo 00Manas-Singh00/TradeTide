@@ -1,5 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
+import { fetchMarketplaceUsers as fetchMarketplaceUsersApi, sendBarterRequest as sendBarterRequestApi, acceptBarterRequest as acceptBarterRequestApi, declineBarterRequest as declineBarterRequestApi, fetchBarterRequests } from './marketplaceApi';
+import type { MarketplaceUser as ApiMarketplaceUser } from './marketplaceApi';
 
 export interface Skill {
   id: string;
@@ -27,6 +29,7 @@ export interface MarketplaceState {
   barterRequests: BarterRequest[];
   requestLoading: boolean;
   requestError: string | null;
+  allSkills: Skill[];
 }
 
 const initialState: MarketplaceState = {
@@ -36,80 +39,82 @@ const initialState: MarketplaceState = {
   barterRequests: [],
   requestLoading: false,
   requestError: null,
+  allSkills: [],
 };
 
-// Mock async fetch users
-export const fetchMarketplaceUsers = createAsyncThunk('marketplace/fetchUsers', async () => {
-  await new Promise((res) => setTimeout(res, 1000));
-  // Mock user data
-  return [
-    {
-      id: 'u1',
-      name: 'Alice',
-      skillsOffered: [
-        { id: '1', name: 'Digital Art' },
-        { id: '3', name: 'Guitar' },
-      ],
-      skillsWanted: [
-        { id: '2', name: 'French Lessons' },
-      ],
-      rating: 4.8,
-    },
-    {
-      id: 'u2',
-      name: 'Bob',
-      skillsOffered: [
-        { id: '2', name: 'French Lessons' },
-      ],
-      skillsWanted: [
-        { id: '1', name: 'Digital Art' },
-        { id: '4', name: 'Web Development' },
-      ],
-      rating: 4.5,
-    },
-    {
-      id: 'u3',
-      name: 'Charlie',
-      skillsOffered: [
-        { id: '4', name: 'Web Development' },
-        { id: '5', name: 'Yoga' },
-      ],
-      skillsWanted: [
-        { id: '3', name: 'Guitar' },
-      ],
-      rating: 4.9,
-    },
-  ];
+// Real async fetch users
+export const fetchMarketplaceUsers = createAsyncThunk('marketplace/fetchUsers', async (params?: {
+  skillsOffered?: string[];
+  skillsWanted?: string[];
+}) => {
+  const users = await fetchMarketplaceUsersApi(params);
+  // Map backend users to frontend MarketplaceUser type
+  return users.map((u: ApiMarketplaceUser) => ({
+    id: u._id,
+    name: u.username,
+    skillsOffered: (u.skillsOffered || []).map((name, idx) => ({ id: `${idx}`, name })),
+    skillsWanted: (u.skillsWanted || []).map((name, idx) => ({ id: `${idx}`, name })),
+    rating: 0, // Placeholder, backend does not provide rating yet
+  }));
 });
 
-// Mock async send barter request
+// Real async send barter request
 export const sendBarterRequest = createAsyncThunk(
   'marketplace/sendBarterRequest',
-  async (userId: string, { rejectWithValue }) => {
-    await new Promise((res) => setTimeout(res, 800));
-    // Simulate random error
-    if (userId === 'u2') return rejectWithValue('Failed to send request');
-    return userId;
+  async (
+    { receiverId, skill }: { receiverId: string; skill: string },
+    { getState, rejectWithValue }
+  ) => {
+    try {
+      // Get sender from auth state
+      // @ts-ignore
+      const state = getState();
+      // @ts-ignore
+      const sender = state.auth.user?._id || state.auth.user?.id;
+      if (!sender) throw new Error('No sender user ID');
+      await sendBarterRequestApi({ sender, receiver: receiverId, skill });
+      return receiverId;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to send request');
+    }
   }
 );
 
-// Mock async accept barter request
+// Real async accept barter request
 export const acceptBarterRequest = createAsyncThunk(
   'marketplace/acceptBarterRequest',
   async (userId: string, { rejectWithValue }) => {
-    await new Promise((res) => setTimeout(res, 800));
-    if (userId === 'u3') return rejectWithValue('Failed to accept request');
-    return userId;
+    try {
+      await acceptBarterRequestApi(userId);
+      return userId;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to accept request');
+    }
   }
 );
 
-// Mock async decline barter request
+// Real async decline barter request
 export const declineBarterRequest = createAsyncThunk(
   'marketplace/declineBarterRequest',
   async (userId: string, { rejectWithValue }) => {
-    await new Promise((res) => setTimeout(res, 800));
-    if (userId === 'u1') return rejectWithValue('Failed to decline request');
-    return userId;
+    try {
+      await declineBarterRequestApi(userId);
+      return userId;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to decline request');
+    }
+  }
+);
+
+// Fetch all barter requests for the logged-in user
+export const getBarterRequests = createAsyncThunk(
+  'marketplace/getBarterRequests',
+  async (userId: string, { rejectWithValue }) => {
+    try {
+      return await fetchBarterRequests(userId);
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to fetch barter requests');
+    }
   }
 );
 
@@ -126,6 +131,15 @@ const marketplaceSlice = createSlice({
       .addCase(fetchMarketplaceUsers.fulfilled, (state, action: PayloadAction<MarketplaceUser[]>) => {
         state.loading = false;
         state.users = action.payload;
+        
+        // Extract and store all unique skills
+        const skillsSet = new Set<string>();
+        action.payload.forEach(user => {
+          user.skillsOffered.forEach(skill => skillsSet.add(JSON.stringify(skill)));
+          user.skillsWanted.forEach(skill => skillsSet.add(JSON.stringify(skill)));
+        });
+        
+        state.allSkills = Array.from(skillsSet).map(s => JSON.parse(s));
       })
       .addCase(fetchMarketplaceUsers.rejected, (state, action) => {
         state.loading = false;
@@ -137,8 +151,8 @@ const marketplaceSlice = createSlice({
         state.requestError = null;
         // Set status to pending for this user (outgoing)
         state.barterRequests = [
-          ...state.barterRequests.filter((r) => r.userId !== action.meta.arg),
-          { userId: action.meta.arg, status: 'pending', direction: 'outgoing' },
+          ...state.barterRequests.filter((r) => r.userId !== action.meta.arg.receiverId),
+          { userId: action.meta.arg.receiverId, status: 'pending', direction: 'outgoing' },
         ];
       })
       .addCase(sendBarterRequest.fulfilled, (state, action) => {
@@ -154,8 +168,8 @@ const marketplaceSlice = createSlice({
         state.requestError = action.payload as string || 'Failed to send request';
         // Set status to error for this user (outgoing)
         state.barterRequests = [
-          ...state.barterRequests.filter((r) => r.userId !== action.meta.arg),
-          { userId: action.meta.arg, status: 'error', direction: 'outgoing' },
+          ...state.barterRequests.filter((r) => r.userId !== action.meta.arg.receiverId),
+          { userId: action.meta.arg.receiverId, status: 'error', direction: 'outgoing' },
         ];
       })
       // Accept barter request
@@ -201,6 +215,10 @@ const marketplaceSlice = createSlice({
           ...state.barterRequests.filter((r) => r.userId !== action.meta.arg),
           { userId: action.meta.arg, status: 'error', direction: 'incoming' },
         ];
+      })
+      .addCase(getBarterRequests.fulfilled, (state, action) => {
+        // Store all barter requests (incoming and outgoing)
+        state.barterRequests = action.payload as any[];
       });
   },
 });
