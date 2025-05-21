@@ -58,7 +58,7 @@
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/TradeTide.git
+git clone https://github.com/00Manas-Singh00/TradeTide.git
 cd TradeTide
 ```
 
