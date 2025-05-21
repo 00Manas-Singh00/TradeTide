@@ -8,6 +8,7 @@ import {
   removeSkillOffered,
   addSkillWanted,
   removeSkillWanted,
+  clearProfileMessages,
 } from '../features/profile/profileSlice';
 import type { Skill } from '../features/profile/profileSlice';
 import ReviewsList from '../features/reviews/ReviewsList';
@@ -22,17 +23,36 @@ const ALL_SKILLS: Skill[] = [
   { id: '6', name: 'Cooking' },
 ];
 
+// Add type for social link
+interface SocialLink { type: string; url: string; }
+
+// Helper to safely get string or array from possibly undefined or wrong type
+function safeString(val: unknown): string { return typeof val === 'string' ? val : ''; }
+function safeArray<T>(val: unknown): T[] { return Array.isArray(val) ? val : []; }
+
 const Profile: React.FC = () => {
   const dispatch = useAppDispatch();
   const { userId } = useParams<{ userId?: string }>();
   const marketplaceUsers = useAppSelector((state) => state.marketplace.users);
   const reviews = useAppSelector((state) => state.reviews.reviews);
   const profile = useAppSelector((state) => state.profile);
+  const authUser = useAppSelector((state) => state.auth.user);
+  const { loading, error, success } = profile;
 
   // Find user by id (from marketplace) or fallback to current user
   const user = userId
     ? marketplaceUsers.find((u) => u.id === userId)
-    : { id: 'me', name: profile.name, email: profile.email, skillsOffered: profile.skillsOffered, skillsWanted: profile.skillsWanted };
+    : authUser && {
+        id: (authUser as any).id || (authUser as any)._id || (authUser as any).email,
+        name: (authUser as any).name || '',
+        email: (authUser as any).email || '',
+        skillsOffered: safeArray<Skill>(profile.skillsOffered),
+        skillsWanted: safeArray<Skill>(profile.skillsWanted),
+        bio: safeString(profile.bio),
+        avatarUrl: safeString(profile.avatarUrl),
+        coverPhotoUrl: safeString(profile.coverPhotoUrl),
+        socialLinks: safeArray<SocialLink>(profile.socialLinks),
+      };
 
   if (!user) {
     return <div className="flex items-center justify-center min-h-screen text-red-600">User not found.</div>;
@@ -45,7 +65,12 @@ const Profile: React.FC = () => {
   const isTopRated = avgRating !== null && avgRating >= 4.8 && reviewCount >= 5;
 
   const isOwnProfile = !userId;
-  const [bio, setBio] = useState(isOwnProfile ? profile.bio : ('bio' in user ? user.bio : ''));
+  const [bio, setBio] = useState(isOwnProfile ? safeString(profile.bio) : ('bio' in user ? safeString(user.bio) : ''));
+  const [avatarUrl, setAvatarUrl] = useState(isOwnProfile ? safeString(profile.avatarUrl) : ('avatarUrl' in user ? safeString(user.avatarUrl) : ''));
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState(isOwnProfile ? safeString(profile.coverPhotoUrl) : ('coverPhotoUrl' in user ? safeString(user.coverPhotoUrl) : ''));
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>(
+    isOwnProfile ? safeArray<SocialLink>(profile.socialLinks) : ('socialLinks' in user ? safeArray<SocialLink>(user.socialLinks) : [])
+  );
 
   const handleSave = () => {
     dispatch(updateProfile({
@@ -54,6 +79,9 @@ const Profile: React.FC = () => {
       bio: String('bio' in user ? user.bio : ''),
       skillsOffered: user.skillsOffered,
       skillsWanted: user.skillsWanted,
+      avatarUrl,
+      coverPhotoUrl,
+      socialLinks,
     }));
   };
 
@@ -72,8 +100,84 @@ const Profile: React.FC = () => {
   });
   const mostReviewedSkill = Object.values(skillCounts).sort((a, b) => b.count - a.count)[0];
 
+  // Handler for avatar/cover upload (simulate upload, just set URL for now)
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const url = URL.createObjectURL(e.target.files[0]);
+      setAvatarUrl(url);
+    }
+  };
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const url = URL.createObjectURL(e.target.files[0]);
+      setCoverPhotoUrl(url);
+    }
+  };
+  // Social links handlers
+  const handleSocialLinkChange = (idx: number, field: 'type' | 'url', value: string) => {
+    setSocialLinks((links: SocialLink[]) => links.map((l: SocialLink, i: number) => i === idx ? { ...l, [field]: value } : l));
+  };
+  const handleAddSocialLink = () => {
+    setSocialLinks((links: SocialLink[]) => [...links, { type: '', url: '' }]);
+  };
+  const handleRemoveSocialLink = (idx: number) => {
+    setSocialLinks((links: SocialLink[]) => links.filter((_, i) => i !== idx));
+  };
+
+  useEffect(() => {
+    if (success || error) {
+      const timer = setTimeout(() => {
+        dispatch(clearProfileMessages());
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [success, error, dispatch]);
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+      {/* Cover Photo */}
+      <div className="w-full max-w-xl relative mb-[-64px]">
+        {coverPhotoUrl ? (
+          <img src={coverPhotoUrl} alt="Cover" className="w-full h-48 object-cover rounded-t-lg" />
+        ) : (
+          <div className="w-full h-48 bg-gray-200 rounded-t-lg flex items-center justify-center text-gray-400">No Cover Photo</div>
+        )}
+        {isOwnProfile && (
+          <label className="absolute top-2 right-2 bg-white bg-opacity-80 px-3 py-1 rounded cursor-pointer text-sm font-medium shadow">
+            Change Cover
+            <input type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+          </label>
+        )}
+      </div>
+      {/* Avatar */}
+      <div className="w-full max-w-xl flex justify-center relative z-10">
+        <div className="-mt-16 mb-4">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="Avatar" className="w-32 h-32 rounded-full border-4 border-white object-cover shadow" />
+          ) : (
+            <div className="w-32 h-32 rounded-full border-4 border-white bg-gray-300 flex items-center justify-center text-4xl text-gray-500 shadow">
+              {user.name?.charAt(0).toUpperCase()}
+            </div>
+          )}
+          {isOwnProfile && (
+            <label className="absolute bottom-0 right-0 bg-white bg-opacity-80 px-2 py-1 rounded cursor-pointer text-xs font-medium shadow ml-24 mt-20">
+              Change
+              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            </label>
+          )}
+        </div>
+      </div>
+      {/* Error/Success Messages */}
+      {error && (
+        <div className="w-full max-w-xl mb-4 bg-red-100 text-red-700 px-4 py-2 rounded text-center">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="w-full max-w-xl mb-4 bg-green-100 text-green-700 px-4 py-2 rounded text-center">
+          {success}
+        </div>
+      )}
       <div className="w-full max-w-xl flex justify-start mb-4">
         <Link
           to="/dashboard"
@@ -84,6 +188,43 @@ const Profile: React.FC = () => {
       </div>
       <div className="bg-white p-8 rounded shadow-md w-full max-w-xl">
         <h2 className="text-2xl font-bold mb-6 text-center">{user.name}'s Profile</h2>
+        {/* Social Links */}
+        <div className="mb-6">
+          <span className="block mb-1 font-semibold">Social Links</span>
+          <div className="flex flex-col gap-2">
+            {socialLinks.length === 0 && <span className="text-gray-400">No social links added.</span>}
+            {socialLinks.map((link: SocialLink, idx: number) => (
+              <div key={idx} className="flex gap-2 items-center">
+                {isOwnProfile ? (
+                  <>
+                    <input
+                      className="border rounded px-2 py-1 text-sm"
+                      placeholder="Type (e.g. twitter, linkedin)"
+                      value={link.type}
+                      onChange={e => handleSocialLinkChange(idx, 'type', e.target.value)}
+                    />
+                    <input
+                      className="border rounded px-2 py-1 text-sm flex-1"
+                      placeholder="URL"
+                      value={link.url}
+                      onChange={e => handleSocialLinkChange(idx, 'url', e.target.value)}
+                    />
+                    <button className="text-red-500 text-xs" onClick={() => handleRemoveSocialLink(idx)}>Remove</button>
+                  </>
+                ) : (
+                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                    {link.type || link.url}
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+          {isOwnProfile && (
+            <button className="mt-2 bg-blue-100 text-blue-800 px-3 py-1 rounded text-sm" onClick={handleAddSocialLink}>
+              Add Social Link
+            </button>
+          )}
+        </div>
         {/* Bio Section */}
         <div className="mb-6">
           <span className="block mb-1 font-semibold">About</span>

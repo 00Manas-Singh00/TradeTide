@@ -7,6 +7,7 @@ export interface Notification {
   message: string;
   read: boolean;
   createdAt: string;
+  data?: Record<string, any>; // Optional data for additional context
 }
 
 export interface NotificationsState {

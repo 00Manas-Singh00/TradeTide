@@ -3,6 +3,7 @@ import { useAppDispatch, useAppSelector } from '../hooks';
 import { logout } from '../features/auth/authSlice';
 import { Link } from 'react-router-dom';
 import ReviewsList from '../features/reviews/ReviewsList';
+import PendingReviews from '../features/reviews/PendingReviews';
 
 const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -130,6 +131,10 @@ const Dashboard: React.FC = () => {
             ))}
           </ul>
         )}
+      </div>
+      {/* Pending Reviews Section */}
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <PendingReviews limit={3} />
       </div>
       {/* Analytics Dashboard */}
       <div className="bg-white p-8 rounded shadow-md w-full max-w-3xl">
